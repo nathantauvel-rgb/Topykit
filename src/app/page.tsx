@@ -623,11 +623,13 @@ export default function Home() {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-6 px-6 py-10 md:flex-row">
           <div className="flex items-center gap-3">
             <Logo size={28} />
-            <span className="text-sm text-zinc-500">© 2026 — All rights reserved.</span>
+            <span className="text-sm text-zinc-500">© 2026 Topykit — All rights reserved.</span>
           </div>
-          <div className="flex gap-6 text-sm text-zinc-600">
-            <a href="#" className="hover:text-[#ff5b2e]">Privacy</a>
-            <a href="#" className="hover:text-[#ff5b2e]">Terms</a>
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-sm text-zinc-600">
+            <a href="/legal/privacy" className="hover:text-[#ff5b2e]">Privacy</a>
+            <a href="/legal/terms" className="hover:text-[#ff5b2e]">Terms</a>
+            <a href="/legal/cookies" className="hover:text-[#ff5b2e]">Cookies</a>
+            <a href="/legal/notice" className="hover:text-[#ff5b2e]">Legal notice</a>
             <a href="mailto:hello@topykit.com" className="hover:text-[#ff5b2e]">Contact</a>
           </div>
         </div>
