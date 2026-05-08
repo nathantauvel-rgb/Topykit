@@ -59,13 +59,22 @@ export default function ScoringConfigurator({
     setRules((prev) => [...prev, newRule]);
   }
 
-  function applyTemplate(templateId: string) {
+  function toggleTemplate(templateId: string) {
     const template = RULE_TEMPLATES.find((t) => t.id === templateId);
     if (!template) return;
-    if (appliedTemplates.has(templateId)) return;
+
+    if (appliedTemplates.has(templateId)) {
+      setRules((prev) => prev.filter((r) => r.templateId !== templateId));
+      setAppliedTemplates((prev) => {
+        const next = new Set(prev);
+        next.delete(templateId);
+        return next;
+      });
+      return;
+    }
 
     const usable = template.rules.filter((r) => availableFields.includes(r.field));
-    const newRules = usable.map((r) => ({ ...r, id: newRuleId() }));
+    const newRules = usable.map((r) => ({ ...r, id: newRuleId(), templateId }));
     setRules((prev) => [...prev, ...newRules]);
     setAppliedTemplates((prev) => new Set(prev).add(templateId));
   }
@@ -155,19 +164,20 @@ export default function ScoringConfigurator({
               return (
                 <button
                   key={t.id}
-                  onClick={() => applyTemplate(t.id)}
-                  disabled={disabled || isApplied}
+                  onClick={() => toggleTemplate(t.id)}
+                  disabled={disabled}
                   className={`group relative rounded-xl border p-4 text-left transition-all disabled:cursor-not-allowed ${
                     isApplied
-                      ? "border-emerald-400 bg-emerald-50"
+                      ? "border-emerald-400 bg-emerald-50 hover:border-red-300 hover:bg-red-50"
                       : disabled
                       ? "border-zinc-200 bg-white opacity-40"
                       : "border-zinc-200 bg-white hover:border-[#ff5b2e] hover:shadow-md"
                   }`}
                 >
                   {isApplied && (
-                    <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white">
-                      ✓
+                    <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white transition-colors group-hover:bg-red-500">
+                      <span className="group-hover:hidden">✓</span>
+                      <span className="hidden group-hover:inline">×</span>
                     </div>
                   )}
                   <div className="font-semibold">{t.name}</div>
@@ -176,14 +186,25 @@ export default function ScoringConfigurator({
                   </div>
                   <div
                     className={`mt-2 text-[10px] font-medium ${
-                      isApplied ? "text-emerald-700" : "text-zinc-400"
+                      isApplied
+                        ? "text-emerald-700 group-hover:text-red-600"
+                        : "text-zinc-400"
                     }`}
                   >
-                    {isApplied
-                      ? "Applied — see rules below"
-                      : disabled
-                      ? "Required column not in your file"
-                      : `Adds ${usable.length} rule${usable.length > 1 ? "s" : ""}`}
+                    {isApplied ? (
+                      <>
+                        <span className="group-hover:hidden">
+                          Applied — click to remove
+                        </span>
+                        <span className="hidden group-hover:inline">
+                          Click to remove
+                        </span>
+                      </>
+                    ) : disabled ? (
+                      "Required column not in your file"
+                    ) : (
+                      `Adds ${usable.length} rule${usable.length > 1 ? "s" : ""}`
+                    )}
                   </div>
                 </button>
               );

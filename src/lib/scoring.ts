@@ -15,6 +15,7 @@ export type ScoringRule = {
   values: string[];
   points: number;
   label?: string;
+  templateId?: string;
 };
 
 export const OPERATOR_LABELS: Record<RuleOperator, string> = {
