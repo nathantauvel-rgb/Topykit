@@ -6,8 +6,10 @@ import { ParsedCsv } from "@/components/CsvUploader";
 import {
   OPERATOR_LABELS,
   RULE_TEMPLATES,
+  RuleCondition,
   RuleOperator,
   ScoringRule,
+  defaultCondition,
   getValidOperators,
   isNumericField,
   newRuleId,
@@ -77,14 +79,11 @@ export default function ScoringConfigurator({
     [data.rows, mapping, rules]
   );
 
-  function addRule(field?: DetectedField) {
-    const targetField = field ?? availableFields[0] ?? "title";
-    const operators = getValidOperators(targetField);
+  function addRule() {
+    const targetField = availableFields[0] ?? "title";
     const newRule: ScoringRule = {
       id: newRuleId(),
-      field: targetField,
-      operator: operators[0],
-      values: isNumericField(targetField) ? ["100"] : [""],
+      conditions: [defaultCondition(targetField)],
       points: 10,
     };
     setRules((prev) => [...prev, newRule]);
@@ -104,7 +103,9 @@ export default function ScoringConfigurator({
       return;
     }
 
-    const usable = template.rules.filter((r) => availableFields.includes(r.field));
+    const usable = template.rules.filter((r) =>
+      r.conditions.every((c) => availableFields.includes(c.field))
+    );
     const newRules = usable.map((r) => ({ ...r, id: newRuleId(), templateId }));
     setRules((prev) => [...prev, ...newRules]);
     setAppliedTemplates((prev) => new Set(prev).add(templateId));
@@ -124,7 +125,9 @@ export default function ScoringConfigurator({
       return;
     }
 
-    const usable = template.rules.filter((r) => availableFields.includes(r.field));
+    const usable = template.rules.filter((r) =>
+      r.conditions.every((c) => availableFields.includes(c.field))
+    );
     const newRules = usable.map((r) => ({
       ...r,
       id: newRuleId(),
@@ -163,17 +166,47 @@ export default function ScoringConfigurator({
     setRestoredFromStorage(null);
   }
 
-  function updateRule(id: string, updates: Partial<ScoringRule>) {
-    setRules((prev) =>
-      prev.map((r) => {
-        if (r.id !== id) return r;
-        const next = { ...r, ...updates };
-        if (updates.field && updates.field !== r.field) {
+  function updateRule(id: string, updater: (r: ScoringRule) => ScoringRule) {
+    setRules((prev) => prev.map((r) => (r.id === id ? updater(r) : r)));
+  }
+
+  function deleteRule(id: string) {
+    setRules((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  function addConditionToRule(ruleId: string) {
+    updateRule(ruleId, (r) => ({
+      ...r,
+      conditions: [
+        ...r.conditions,
+        defaultCondition(availableFields[0] ?? "title"),
+      ],
+    }));
+  }
+
+  function removeConditionFromRule(ruleId: string, conditionIndex: number) {
+    updateRule(ruleId, (r) => ({
+      ...r,
+      conditions: r.conditions.filter((_, i) => i !== conditionIndex),
+    }));
+  }
+
+  function updateCondition(
+    ruleId: string,
+    conditionIndex: number,
+    updates: Partial<RuleCondition>
+  ) {
+    updateRule(ruleId, (r) => ({
+      ...r,
+      conditions: r.conditions.map((c, i) => {
+        if (i !== conditionIndex) return c;
+        const next = { ...c, ...updates };
+        if (updates.field && updates.field !== c.field) {
           const ops = getValidOperators(updates.field);
           next.operator = ops[0];
           next.values = isNumericField(updates.field) ? ["100"] : [""];
         }
-        if (updates.operator && updates.operator !== r.operator) {
+        if (updates.operator && updates.operator !== c.operator) {
           next.values =
             updates.operator === "between"
               ? ["50", "500"]
@@ -182,12 +215,12 @@ export default function ScoringConfigurator({
               : [""];
         }
         return next;
-      })
-    );
+      }),
+    }));
   }
 
-  function deleteRule(id: string) {
-    setRules((prev) => prev.filter((r) => r.id !== id));
+  function updateRulePoints(ruleId: string, points: number) {
+    updateRule(ruleId, (r) => ({ ...r, points }));
   }
 
   const totalPoints = rules.reduce((sum, r) => sum + Math.abs(r.points), 0);
@@ -259,20 +292,16 @@ export default function ScoringConfigurator({
 
         {userTemplates.length > 0 && (
           <div className="rounded-2xl border-2 border-dashed border-zinc-300 bg-white p-6">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-700">
-                  💾 My templates
-                </h3>
-                <p className="mt-1 text-sm text-zinc-500">
-                  Your saved scoring presets. Click to apply.
-                </p>
-              </div>
-            </div>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-700">
+              💾 My templates
+            </h3>
+            <p className="mt-1 text-sm text-zinc-500">
+              Your saved scoring presets. Click to apply.
+            </p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {userTemplates.map((t) => {
                 const usable = t.rules.filter((r) =>
-                  availableFields.includes(r.field)
+                  r.conditions.every((c) => availableFields.includes(c.field))
                 );
                 const disabled = usable.length === 0;
                 const isApplied = appliedTemplates.has(t.id);
@@ -354,7 +383,7 @@ export default function ScoringConfigurator({
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {RULE_TEMPLATES.map((t) => {
               const usable = t.rules.filter((r) =>
-                availableFields.includes(r.field)
+                r.conditions.every((c) => availableFields.includes(c.field))
               );
               const disabled = usable.length === 0;
               const isApplied = appliedTemplates.has(t.id);
@@ -416,13 +445,18 @@ export default function ScoringConfigurator({
               rule={rule}
               index={i}
               availableFields={availableFields}
-              onChange={(updates) => updateRule(rule.id, updates)}
+              onUpdateCondition={(ci, updates) =>
+                updateCondition(rule.id, ci, updates)
+              }
+              onAddCondition={() => addConditionToRule(rule.id)}
+              onRemoveCondition={(ci) => removeConditionFromRule(rule.id, ci)}
+              onUpdatePoints={(p) => updateRulePoints(rule.id, p)}
               onDelete={() => deleteRule(rule.id)}
             />
           ))}
 
           <button
-            onClick={() => addRule()}
+            onClick={addRule}
             disabled={availableFields.length === 0}
             className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-zinc-300 bg-white py-4 text-sm font-semibold text-zinc-600 hover:border-[#ff5b2e] hover:bg-[#fff9f6] hover:text-[#ff5b2e] disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -612,55 +646,90 @@ function RuleCard({
   rule,
   index,
   availableFields,
-  onChange,
+  onUpdateCondition,
+  onAddCondition,
+  onRemoveCondition,
+  onUpdatePoints,
   onDelete,
 }: {
   rule: ScoringRule;
   index: number;
   availableFields: DetectedField[];
-  onChange: (updates: Partial<ScoringRule>) => void;
+  onUpdateCondition: (
+    conditionIndex: number,
+    updates: Partial<RuleCondition>
+  ) => void;
+  onAddCondition: () => void;
+  onRemoveCondition: (conditionIndex: number) => void;
+  onUpdatePoints: (points: number) => void;
   onDelete: () => void;
 }) {
-  const operators = getValidOperators(rule.field);
-  const isNumeric = isNumericField(rule.field);
-  const valuesAsString = rule.values.join(", ");
-
   return (
     <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
       <div className="flex items-start gap-3">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-xs font-bold text-zinc-600">
           {index + 1}
         </div>
-        <div className="flex-1 space-y-3">
-          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-            <select
-              value={rule.field}
-              onChange={(e) =>
-                onChange({ field: e.target.value as DetectedField })
-              }
-              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium outline-none focus:border-[#ff5b2e]"
-            >
-              {availableFields.map((f) => (
-                <option key={f} value={f}>
-                  {FIELD_LABELS[f]}
-                </option>
-              ))}
-            </select>
+        <div className="flex-1 space-y-2">
+          {rule.conditions.map((condition, ci) => (
+            <ConditionRow
+              key={ci}
+              condition={condition}
+              isFirst={ci === 0}
+              canRemove={rule.conditions.length > 1}
+              availableFields={availableFields}
+              onChange={(updates) => onUpdateCondition(ci, updates)}
+              onRemove={() => onRemoveCondition(ci)}
+            />
+          ))}
 
-            <select
-              value={rule.operator}
-              onChange={(e) =>
-                onChange({ operator: e.target.value as RuleOperator })
-              }
-              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
+          <div className="flex flex-wrap items-center gap-2 pt-2">
+            <button
+              onClick={onAddCondition}
+              className="inline-flex items-center gap-1 rounded-md border border-dashed border-zinc-300 bg-white px-2.5 py-1 text-xs font-bold text-zinc-600 hover:border-[#ff5b2e] hover:bg-[#fff5f0] hover:text-[#ff5b2e]"
             >
-              {operators.map((op) => (
-                <option key={op} value={op}>
-                  {OPERATOR_LABELS[op]}
-                </option>
-              ))}
-            </select>
+              <span>+ AND</span>
+            </button>
+            <span className="text-[10px] text-zinc-400">
+              add another condition (all must match)
+            </span>
+          </div>
 
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-3">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-zinc-500">
+                When ALL match, score:
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => onUpdatePoints(rule.points - 5)}
+                  className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  value={rule.points}
+                  onChange={(e) =>
+                    onUpdatePoints(parseInt(e.target.value, 10) || 0)
+                  }
+                  className={`w-16 rounded-md border px-2 py-1 text-center text-sm font-bold tabular-nums outline-none ${
+                    rule.points > 0
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : rule.points < 0
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : "border-zinc-200 text-zinc-700"
+                  }`}
+                />
+                <button
+                  onClick={() => onUpdatePoints(rule.points + 5)}
+                  className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                >
+                  +
+                </button>
+                <span className="text-xs text-zinc-500">points</span>
+              </div>
+            </div>
             <button
               onClick={onDelete}
               className="rounded-lg p-2 text-zinc-400 hover:bg-red-50 hover:text-red-600"
@@ -671,94 +740,132 @@ function RuleCard({
               </svg>
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-          {rule.operator === "between" ? (
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="number"
-                value={rule.values[0] ?? ""}
-                onChange={(e) =>
-                  onChange({ values: [e.target.value, rule.values[1] ?? ""] })
-                }
-                placeholder="min"
-                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
-              />
-              <input
-                type="number"
-                value={rule.values[1] ?? ""}
-                onChange={(e) =>
-                  onChange({ values: [rule.values[0] ?? "", e.target.value] })
-                }
-                placeholder="max"
-                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
-              />
-            </div>
-          ) : isNumeric ? (
+function ConditionRow({
+  condition,
+  isFirst,
+  canRemove,
+  availableFields,
+  onChange,
+  onRemove,
+}: {
+  condition: RuleCondition;
+  isFirst: boolean;
+  canRemove: boolean;
+  availableFields: DetectedField[];
+  onChange: (updates: Partial<RuleCondition>) => void;
+  onRemove: () => void;
+}) {
+  const operators = getValidOperators(condition.field);
+  const isNumeric = isNumericField(condition.field);
+  const valuesAsString = condition.values.join(", ");
+
+  return (
+    <div
+      className={`relative rounded-lg ${
+        isFirst ? "" : "border-l-2 border-[#ff5b2e]/40 pl-3"
+      }`}
+    >
+      {!isFirst && (
+        <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-[#ff5b2e]">
+          AND
+        </div>
+      )}
+      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+        <select
+          value={condition.field}
+          onChange={(e) =>
+            onChange({ field: e.target.value as DetectedField })
+          }
+          className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium outline-none focus:border-[#ff5b2e]"
+        >
+          {availableFields.map((f) => (
+            <option key={f} value={f}>
+              {FIELD_LABELS[f]}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={condition.operator}
+          onChange={(e) =>
+            onChange({ operator: e.target.value as RuleOperator })
+          }
+          className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
+        >
+          {operators.map((op) => (
+            <option key={op} value={op}>
+              {OPERATOR_LABELS[op]}
+            </option>
+          ))}
+        </select>
+
+        {canRemove ? (
+          <button
+            onClick={onRemove}
+            className="rounded-lg p-2 text-zinc-400 hover:bg-red-50 hover:text-red-600"
+            title="Remove this condition"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        ) : (
+          <div className="w-9" />
+        )}
+      </div>
+
+      <div className="mt-2">
+        {condition.operator === "between" ? (
+          <div className="grid grid-cols-2 gap-2">
             <input
               type="number"
-              value={rule.values[0] ?? ""}
-              onChange={(e) => onChange({ values: [e.target.value] })}
-              placeholder="Enter a number"
-              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
-            />
-          ) : (
-            <input
-              type="text"
-              value={valuesAsString}
+              value={condition.values[0] ?? ""}
               onChange={(e) =>
-                onChange({
-                  values: e.target.value
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                })
+                onChange({ values: [e.target.value, condition.values[1] ?? ""] })
               }
-              placeholder='e.g. CEO, Founder, Head of'
-              className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
+              placeholder="min"
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
             />
-          )}
-
-          {!isNumeric && rule.operator !== "between" && (
-            <p className="text-xs text-zinc-400">
-              Separate multiple values with commas. Match is case-insensitive.
-            </p>
-          )}
-
-          <div className="flex items-center gap-3 border-t border-zinc-100 pt-3">
-            <span className="text-xs font-medium text-zinc-500">
-              When matched, score:
-            </span>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => onChange({ points: rule.points - 5 })}
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
-              >
-                −
-              </button>
-              <input
-                type="number"
-                value={rule.points}
-                onChange={(e) =>
-                  onChange({ points: parseInt(e.target.value, 10) || 0 })
-                }
-                className={`w-16 rounded-md border px-2 py-1 text-center text-sm font-bold tabular-nums outline-none ${
-                  rule.points > 0
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : rule.points < 0
-                    ? "border-red-200 bg-red-50 text-red-700"
-                    : "border-zinc-200 text-zinc-700"
-                }`}
-              />
-              <button
-                onClick={() => onChange({ points: rule.points + 5 })}
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-zinc-200 text-zinc-600 hover:bg-zinc-50"
-              >
-                +
-              </button>
-              <span className="text-xs text-zinc-500">points</span>
-            </div>
+            <input
+              type="number"
+              value={condition.values[1] ?? ""}
+              onChange={(e) =>
+                onChange({ values: [condition.values[0] ?? "", e.target.value] })
+              }
+              placeholder="max"
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
+            />
           </div>
-        </div>
+        ) : isNumeric ? (
+          <input
+            type="number"
+            value={condition.values[0] ?? ""}
+            onChange={(e) => onChange({ values: [e.target.value] })}
+            placeholder="Enter a number"
+            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
+          />
+        ) : (
+          <input
+            type="text"
+            value={valuesAsString}
+            onChange={(e) =>
+              onChange({
+                values: e.target.value
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              })
+            }
+            placeholder='e.g. CEO, Founder, Head of'
+            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
+          />
+        )}
       </div>
     </div>
   );

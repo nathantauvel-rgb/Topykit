@@ -8,11 +8,15 @@ export type RuleOperator =
   | "less_than"
   | "between";
 
-export type ScoringRule = {
-  id: string;
+export type RuleCondition = {
   field: DetectedField;
   operator: RuleOperator;
   values: string[];
+};
+
+export type ScoringRule = {
+  id: string;
+  conditions: RuleCondition[];
   points: number;
   label?: string;
   templateId?: string;
@@ -52,6 +56,15 @@ export function newRuleId(): string {
   return `r_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+export function defaultCondition(field: DetectedField): RuleCondition {
+  const operators = getValidOperators(field);
+  return {
+    field,
+    operator: operators[0],
+    values: isNumericField(field) ? ["100"] : [""],
+  };
+}
+
 function getCellValue(
   row: Record<string, string>,
   mapping: ColumnMapping[],
@@ -73,52 +86,61 @@ function parseNumber(value: string | null): number | null {
   return Number.isNaN(num) ? null : num;
 }
 
-export function ruleMatches(
+export function conditionMatches(
   row: Record<string, string>,
   mapping: ColumnMapping[],
-  rule: ScoringRule
+  condition: RuleCondition
 ): boolean {
-  const cell = getCellValue(row, mapping, rule.field);
+  const cell = getCellValue(row, mapping, condition.field);
 
   if (cell === null) {
-    return rule.operator === "contains_none";
+    return condition.operator === "contains_none";
   }
 
   const cellLower = cell.toLowerCase();
 
-  switch (rule.operator) {
+  switch (condition.operator) {
     case "contains_any":
-      return rule.values.some((v) =>
+      return condition.values.some((v) =>
         cellLower.includes(v.toLowerCase().trim())
       );
     case "contains_none":
-      return !rule.values.some((v) =>
+      return !condition.values.some((v) =>
         cellLower.includes(v.toLowerCase().trim())
       );
     case "equals_any":
-      return rule.values.some(
+      return condition.values.some(
         (v) => cellLower === v.toLowerCase().trim()
       );
     case "greater_than": {
       const num = parseNumber(cell);
-      const target = parseNumber(rule.values[0] ?? null);
+      const target = parseNumber(condition.values[0] ?? null);
       if (num === null || target === null) return false;
       return num > target;
     }
     case "less_than": {
       const num = parseNumber(cell);
-      const target = parseNumber(rule.values[0] ?? null);
+      const target = parseNumber(condition.values[0] ?? null);
       if (num === null || target === null) return false;
       return num < target;
     }
     case "between": {
       const num = parseNumber(cell);
-      const min = parseNumber(rule.values[0] ?? null);
-      const max = parseNumber(rule.values[1] ?? null);
+      const min = parseNumber(condition.values[0] ?? null);
+      const max = parseNumber(condition.values[1] ?? null);
       if (num === null || min === null || max === null) return false;
       return num >= min && num <= max;
     }
   }
+}
+
+export function ruleMatches(
+  row: Record<string, string>,
+  mapping: ColumnMapping[],
+  rule: ScoringRule
+): boolean {
+  if (rule.conditions.length === 0) return false;
+  return rule.conditions.every((c) => conditionMatches(row, mapping, c));
 }
 
 export type ProspectScore = {
@@ -178,16 +200,24 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
     description: "Boost senior titles, deprioritize juniors",
     rules: [
       {
-        field: "title",
-        operator: "contains_any",
-        values: ["CEO", "CTO", "CMO", "CFO", "Founder", "Head of", "VP", "Director"],
+        conditions: [
+          {
+            field: "title",
+            operator: "contains_any",
+            values: ["CEO", "CTO", "CMO", "CFO", "Founder", "Head of", "VP", "Director"],
+          },
+        ],
         points: 30,
         label: "Senior decision maker",
       },
       {
-        field: "title",
-        operator: "contains_any",
-        values: ["Junior", "Intern", "Assistant", "Trainee"],
+        conditions: [
+          {
+            field: "title",
+            operator: "contains_any",
+            values: ["Junior", "Intern", "Assistant", "Trainee"],
+          },
+        ],
         points: -25,
         label: "Junior role",
       },
@@ -199,9 +229,13 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
     description: "Prioritize software & tech companies",
     rules: [
       {
-        field: "industry",
-        operator: "contains_any",
-        values: ["SaaS", "Software", "Tech", "AI", "FinTech"],
+        conditions: [
+          {
+            field: "industry",
+            operator: "contains_any",
+            values: ["SaaS", "Software", "Tech", "AI", "FinTech"],
+          },
+        ],
         points: 20,
         label: "Tech industry",
       },
@@ -213,16 +247,24 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
     description: "Companies between 50 and 500 employees",
     rules: [
       {
-        field: "companySize",
-        operator: "between",
-        values: ["50", "500"],
+        conditions: [
+          {
+            field: "companySize",
+            operator: "between",
+            values: ["50", "500"],
+          },
+        ],
         points: 25,
         label: "Mid-market company",
       },
       {
-        field: "companySize",
-        operator: "less_than",
-        values: ["20"],
+        conditions: [
+          {
+            field: "companySize",
+            operator: "less_than",
+            values: ["20"],
+          },
+        ],
         points: -15,
         label: "Too small",
       },
@@ -234,12 +276,16 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
     description: "Boost European prospects",
     rules: [
       {
-        field: "location",
-        operator: "contains_any",
-        values: [
-          "Paris", "London", "Berlin", "Madrid", "Amsterdam",
-          "Lisbon", "Munich", "Lyon", "Edinburgh", "Dublin", "France",
-          "UK", "Germany", "Spain", "Netherlands", "Portugal",
+        conditions: [
+          {
+            field: "location",
+            operator: "contains_any",
+            values: [
+              "Paris", "London", "Berlin", "Madrid", "Amsterdam",
+              "Lisbon", "Munich", "Lyon", "Edinburgh", "Dublin", "France",
+              "UK", "Germany", "Spain", "Netherlands", "Portugal",
+            ],
+          },
         ],
         points: 15,
         label: "European location",
@@ -247,3 +293,48 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
     ],
   },
 ];
+
+type LegacyRule = {
+  id?: string;
+  field?: DetectedField;
+  operator?: RuleOperator;
+  values?: string[];
+  conditions?: RuleCondition[];
+  points: number;
+  label?: string;
+  templateId?: string;
+};
+
+export function migrateRule(raw: LegacyRule): ScoringRule {
+  if (Array.isArray(raw.conditions) && raw.conditions.length > 0) {
+    return {
+      id: raw.id ?? newRuleId(),
+      conditions: raw.conditions,
+      points: raw.points,
+      label: raw.label,
+      templateId: raw.templateId,
+    };
+  }
+  if (raw.field && raw.operator) {
+    return {
+      id: raw.id ?? newRuleId(),
+      conditions: [
+        {
+          field: raw.field,
+          operator: raw.operator,
+          values: raw.values ?? [""],
+        },
+      ],
+      points: raw.points,
+      label: raw.label,
+      templateId: raw.templateId,
+    };
+  }
+  return {
+    id: raw.id ?? newRuleId(),
+    conditions: [],
+    points: raw.points,
+    label: raw.label,
+    templateId: raw.templateId,
+  };
+}

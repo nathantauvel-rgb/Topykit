@@ -1,6 +1,6 @@
 "use client";
 
-import { ScoringRule } from "@/lib/scoring";
+import { ScoringRule, migrateRule } from "@/lib/scoring";
 
 const RULES_KEY = "topykit:current-rules:v1";
 const TEMPLATES_KEY = "topykit:user-templates:v1";
@@ -12,6 +12,19 @@ export type UserTemplate = {
   rules: Omit<ScoringRule, "id" | "templateId">[];
   createdAt: string;
 };
+
+function migrateUserTemplate(t: UserTemplate): UserTemplate {
+  return {
+    ...t,
+    rules: t.rules.map((r) => {
+      const migrated = migrateRule({ ...r, id: "tmp" });
+      const { id, templateId, ...rest } = migrated;
+      void id;
+      void templateId;
+      return rest;
+    }),
+  };
+}
 
 function isBrowser(): boolean {
   return typeof window !== "undefined";
@@ -37,7 +50,7 @@ export function loadCurrentRules(): ScoringRule[] | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return null;
-    return parsed as ScoringRule[];
+    return parsed.map(migrateRule);
   } catch {
     return null;
   }
@@ -59,7 +72,7 @@ export function loadUserTemplates(): UserTemplate[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed as UserTemplate[];
+    return (parsed as UserTemplate[]).map(migrateUserTemplate);
   } catch {
     return [];
   }
