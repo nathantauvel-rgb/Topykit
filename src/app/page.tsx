@@ -15,12 +15,20 @@ export default function Home() {
             <a href="#pricing" className="hover:text-[#ff5b2e]">Pricing</a>
             <a href="#faq" className="hover:text-[#ff5b2e]">FAQ</a>
           </nav>
-          <a
-            href="#waitlist"
-            className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#ff5b2e]"
-          >
-            Get early access
-          </a>
+          <div className="flex items-center gap-2">
+            <a
+              href="/app"
+              className="hidden rounded-full border border-zinc-300 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-900 transition-colors hover:border-[#ff5b2e] hover:text-[#ff5b2e] sm:inline-block"
+            >
+              Try it free →
+            </a>
+            <a
+              href="#waitlist"
+              className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#ff5b2e]"
+            >
+              Get early access
+            </a>
+          </div>
         </div>
       </header>
 
@@ -60,6 +68,15 @@ export default function Home() {
                 No credit card. No spam. We&apos;ll only email you when Topykit
                 is ready.
               </p>
+            </div>
+
+            <div className="mt-6">
+              <a
+                href="/app"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-[#ff5b2e] hover:text-[#c43a14]"
+              >
+                Or try the beta now (free, no signup) →
+              </a>
             </div>
 
             <div className="mt-8 flex items-center justify-center gap-6 text-xs text-zinc-500">
