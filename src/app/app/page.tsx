@@ -5,24 +5,28 @@ import { useState } from "react";
 import Logo from "@/components/Logo";
 import CsvUploader, { ParsedCsv } from "@/components/CsvUploader";
 import CsvPreview from "@/components/CsvPreview";
+import ScoringConfigurator from "@/components/ScoringConfigurator";
 import { ColumnMapping } from "@/lib/csv";
+import { ScoringRule } from "@/lib/scoring";
 
-type Step = "upload" | "preview" | "configure";
+type Step = "upload" | "preview" | "configure" | "results";
 
 export default function AppPage() {
   const [step, setStep] = useState<Step>("upload");
   const [parsed, setParsed] = useState<ParsedCsv | null>(null);
   const [mapping, setMapping] = useState<ColumnMapping[] | null>(null);
+  const [rules, setRules] = useState<ScoringRule[] | null>(null);
 
   function reset() {
     setStep("upload");
     setParsed(null);
     setMapping(null);
+    setRules(null);
   }
 
   return (
     <div className="min-h-screen bg-[#fdf8f1] text-zinc-900">
-      <header className="border-b border-zinc-200/60 bg-[#fdf8f1]/80 backdrop-blur-md">
+      <header className="sticky top-0 z-30 border-b border-zinc-200/60 bg-[#fdf8f1]/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center">
             <Logo />
@@ -31,17 +35,14 @@ export default function AppPage() {
             <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
               Beta
             </span>
-            <Link
-              href="/"
-              className="text-zinc-600 hover:text-[#ff5b2e]"
-            >
+            <Link href="/" className="text-zinc-600 hover:text-[#ff5b2e]">
               ← Back to home
             </Link>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-12">
+      <main className="mx-auto max-w-6xl px-6 py-12">
         <Stepper step={step} />
 
         <div className="mt-10">
@@ -77,12 +78,24 @@ export default function AppPage() {
             />
           )}
 
-          {step === "configure" && mapping && parsed && (
-            <ConfigurePlaceholder
-              fileName={parsed.fileName}
-              rowCount={parsed.totalRows}
+          {step === "configure" && parsed && mapping && (
+            <ScoringConfigurator
+              data={parsed}
               mapping={mapping}
+              onConfirm={(r) => {
+                setRules(r);
+                setStep("results");
+              }}
+              onBack={() => setStep("preview")}
+            />
+          )}
+
+          {step === "results" && rules && parsed && mapping && (
+            <ResultsPlaceholder
+              rulesCount={rules.length}
+              rowCount={parsed.totalRows}
               onReset={reset}
+              onBack={() => setStep("configure")}
             />
           )}
         </div>
@@ -93,15 +106,16 @@ export default function AppPage() {
 
 function Stepper({ step }: { step: Step }) {
   const steps = [
-    { id: "upload", label: "Upload CSV" },
+    { id: "upload", label: "Upload" },
     { id: "preview", label: "Map columns" },
     { id: "configure", label: "Configure scoring" },
+    { id: "results", label: "Results" },
   ];
 
   const currentIndex = steps.findIndex((s) => s.id === step);
 
   return (
-    <ol className="mx-auto flex max-w-2xl items-center justify-between gap-2">
+    <ol className="mx-auto flex max-w-3xl items-center justify-between gap-2">
       {steps.map((s, i) => {
         const isActive = i === currentIndex;
         const isDone = i < currentIndex;
@@ -120,7 +134,7 @@ function Stepper({ step }: { step: Step }) {
                 {isDone ? "✓" : i + 1}
               </div>
               <span
-                className={`text-sm font-medium ${
+                className={`hidden text-sm font-medium sm:inline ${
                   isActive
                     ? "text-zinc-900"
                     : isDone
@@ -145,63 +159,47 @@ function Stepper({ step }: { step: Step }) {
   );
 }
 
-function ConfigurePlaceholder({
-  fileName,
+function ResultsPlaceholder({
+  rulesCount,
   rowCount,
-  mapping,
   onReset,
+  onBack,
 }: {
-  fileName: string;
+  rulesCount: number;
   rowCount: number;
-  mapping: ColumnMapping[];
   onReset: () => void;
+  onBack: () => void;
 }) {
-  const detected = mapping.filter((m) => m.field !== "unknown");
-
   return (
     <div className="mx-auto max-w-2xl">
       <div className="rounded-2xl border-2 border-dashed border-[#ff5b2e]/40 bg-[#fff5f0] p-10 text-center">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#ff5b2e]/15 text-[#ff5b2e]">
           <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
         </div>
-        <h2 className="mt-5 text-2xl font-bold tracking-tight">Coming next: scoring rules</h2>
+        <h2 className="mt-5 text-2xl font-bold tracking-tight">Scoring is configured!</h2>
         <p className="mt-2 text-zinc-600">
-          The scoring configurator is the next piece I&apos;ll build. For now, here&apos;s what
-          Topykit understood from your file.
+          {rulesCount} rule{rulesCount > 1 ? "s" : ""} ready to score{" "}
+          {rowCount.toLocaleString()} prospects.
         </p>
-
-        <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-5 text-left">
-          <div className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-            File
-          </div>
-          <div className="mt-1 font-mono text-sm">{fileName}</div>
-          <div className="mt-3 text-xs font-bold uppercase tracking-wider text-zinc-500">
-            Rows
-          </div>
-          <div className="mt-1 text-sm">{rowCount.toLocaleString()} prospects</div>
-          <div className="mt-3 text-xs font-bold uppercase tracking-wider text-zinc-500">
-            Mapped fields ({detected.length})
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {detected.map((m) => (
-              <span
-                key={m.index}
-                className="rounded-md bg-[#ff5b2e]/10 px-2 py-1 text-xs font-semibold text-[#c43a14]"
-              >
-                {m.header}
-              </span>
-            ))}
-          </div>
+        <p className="mt-3 text-sm text-zinc-500">
+          The full results table + CSV export is the next piece I&apos;ll build (Session 3).
+        </p>
+        <div className="mt-6 flex justify-center gap-3">
+          <button
+            onClick={onBack}
+            className="rounded-full border-2 border-zinc-900 px-5 py-2.5 text-sm font-semibold hover:bg-zinc-900 hover:text-white"
+          >
+            ← Adjust rules
+          </button>
+          <button
+            onClick={onReset}
+            className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#ff5b2e]"
+          >
+            Try another file
+          </button>
         </div>
-
-        <button
-          onClick={onReset}
-          className="mt-8 rounded-full border-2 border-zinc-900 px-5 py-2.5 text-sm font-semibold hover:bg-zinc-900 hover:text-white"
-        >
-          Try another file
-        </button>
       </div>
     </div>
   );
