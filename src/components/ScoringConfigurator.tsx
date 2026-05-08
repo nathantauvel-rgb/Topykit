@@ -28,7 +28,9 @@ export default function ScoringConfigurator({
   onBack,
 }: Props) {
   const [rules, setRules] = useState<ScoringRule[]>([]);
-  const [showTemplates, setShowTemplates] = useState(true);
+  const [appliedTemplates, setAppliedTemplates] = useState<Set<string>>(
+    new Set()
+  );
 
   const availableFields = useMemo(
     () =>
@@ -55,17 +57,17 @@ export default function ScoringConfigurator({
       points: 10,
     };
     setRules((prev) => [...prev, newRule]);
-    setShowTemplates(false);
   }
 
   function applyTemplate(templateId: string) {
     const template = RULE_TEMPLATES.find((t) => t.id === templateId);
     if (!template) return;
+    if (appliedTemplates.has(templateId)) return;
 
     const usable = template.rules.filter((r) => availableFields.includes(r.field));
     const newRules = usable.map((r) => ({ ...r, id: newRuleId() }));
     setRules((prev) => [...prev, ...newRules]);
-    setShowTemplates(false);
+    setAppliedTemplates((prev) => new Set(prev).add(templateId));
   }
 
   function updateRule(id: string, updates: Partial<ScoringRule>) {
@@ -127,49 +129,67 @@ export default function ScoringConfigurator({
           </div>
         </div>
 
-        {showTemplates && rules.length === 0 && (
-          <div className="rounded-2xl border-2 border-dashed border-[#ff5b2e]/30 bg-[#fff9f6] p-6">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-[#ff5b2e]">
-              Quick start with a template
-            </h3>
-            <p className="mt-2 text-sm text-zinc-600">
-              Pick a preset to add common rules instantly. You can edit them
-              after.
-            </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {RULE_TEMPLATES.map((t) => {
-                const usable = t.rules.filter((r) =>
-                  availableFields.includes(r.field)
-                );
-                const disabled = usable.length === 0;
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => applyTemplate(t.id)}
-                    disabled={disabled}
-                    className="group rounded-xl border border-zinc-200 bg-white p-4 text-left transition-all hover:border-[#ff5b2e] hover:shadow-md disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-zinc-200 disabled:hover:shadow-none"
-                  >
-                    <div className="font-semibold">{t.name}</div>
-                    <div className="mt-1 text-xs text-zinc-500">
-                      {t.description}
-                    </div>
-                    <div className="mt-2 text-[10px] font-medium text-zinc-400">
-                      {disabled
-                        ? "Required column not in your file"
-                        : `Adds ${usable.length} rule${usable.length > 1 ? "s" : ""}`}
-                    </div>
-                  </button>
-                );
-              })}
+        <div className="rounded-2xl border-2 border-dashed border-[#ff5b2e]/30 bg-[#fff9f6] p-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold uppercase tracking-wider text-[#ff5b2e]">
+                Quick-start templates
+              </h3>
+              <p className="mt-1 text-sm text-zinc-600">
+                Click multiple templates to combine them. Edit any rule after.
+              </p>
             </div>
-            <button
-              onClick={() => setShowTemplates(false)}
-              className="mt-4 text-xs font-medium text-zinc-500 underline hover:text-zinc-700"
-            >
-              Or start from scratch
-            </button>
+            {appliedTemplates.size > 0 && (
+              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                {appliedTemplates.size} applied
+              </span>
+            )}
           </div>
-        )}
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {RULE_TEMPLATES.map((t) => {
+              const usable = t.rules.filter((r) =>
+                availableFields.includes(r.field)
+              );
+              const disabled = usable.length === 0;
+              const isApplied = appliedTemplates.has(t.id);
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => applyTemplate(t.id)}
+                  disabled={disabled || isApplied}
+                  className={`group relative rounded-xl border p-4 text-left transition-all disabled:cursor-not-allowed ${
+                    isApplied
+                      ? "border-emerald-400 bg-emerald-50"
+                      : disabled
+                      ? "border-zinc-200 bg-white opacity-40"
+                      : "border-zinc-200 bg-white hover:border-[#ff5b2e] hover:shadow-md"
+                  }`}
+                >
+                  {isApplied && (
+                    <div className="absolute right-3 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white">
+                      ✓
+                    </div>
+                  )}
+                  <div className="font-semibold">{t.name}</div>
+                  <div className="mt-1 text-xs text-zinc-500">
+                    {t.description}
+                  </div>
+                  <div
+                    className={`mt-2 text-[10px] font-medium ${
+                      isApplied ? "text-emerald-700" : "text-zinc-400"
+                    }`}
+                  >
+                    {isApplied
+                      ? "Applied — see rules below"
+                      : disabled
+                      ? "Required column not in your file"
+                      : `Adds ${usable.length} rule${usable.length > 1 ? "s" : ""}`}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         <div className="space-y-3">
           {rules.map((rule, i) => (
