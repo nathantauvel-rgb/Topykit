@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ColumnMapping, DetectedField, FIELD_LABELS } from "@/lib/csv";
 import { ParsedCsv } from "@/components/CsvUploader";
 import {
@@ -13,6 +13,15 @@ import {
   newRuleId,
   scoreAll,
 } from "@/lib/scoring";
+import {
+  addUserTemplate,
+  clearCurrentRules,
+  deleteUserTemplate,
+  loadCurrentRules,
+  loadUserTemplates,
+  saveCurrentRules,
+  UserTemplate,
+} from "@/lib/storage";
 
 type Props = {
   data: ParsedCsv;
@@ -31,6 +40,28 @@ export default function ScoringConfigurator({
   const [appliedTemplates, setAppliedTemplates] = useState<Set<string>>(
     new Set()
   );
+  const [userTemplates, setUserTemplates] = useState<UserTemplate[]>([]);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [restoredFromStorage, setRestoredFromStorage] = useState<number | null>(
+    null
+  );
+
+  useEffect(() => {
+    const saved = loadCurrentRules();
+    if (saved && saved.length > 0) {
+      setRules(saved);
+      const templateIds = new Set(
+        saved.map((r) => r.templateId).filter((id): id is string => !!id)
+      );
+      setAppliedTemplates(templateIds);
+      setRestoredFromStorage(saved.length);
+    }
+    setUserTemplates(loadUserTemplates());
+  }, []);
+
+  useEffect(() => {
+    saveCurrentRules(rules);
+  }, [rules]);
 
   const availableFields = useMemo(
     () =>
@@ -79,6 +110,59 @@ export default function ScoringConfigurator({
     setAppliedTemplates((prev) => new Set(prev).add(templateId));
   }
 
+  function applyUserTemplate(templateId: string) {
+    const template = userTemplates.find((t) => t.id === templateId);
+    if (!template) return;
+
+    if (appliedTemplates.has(templateId)) {
+      setRules((prev) => prev.filter((r) => r.templateId !== templateId));
+      setAppliedTemplates((prev) => {
+        const next = new Set(prev);
+        next.delete(templateId);
+        return next;
+      });
+      return;
+    }
+
+    const usable = template.rules.filter((r) => availableFields.includes(r.field));
+    const newRules = usable.map((r) => ({
+      ...r,
+      id: newRuleId(),
+      templateId,
+    }));
+    setRules((prev) => [...prev, ...newRules]);
+    setAppliedTemplates((prev) => new Set(prev).add(templateId));
+  }
+
+  function handleDeleteUserTemplate(templateId: string) {
+    if (!confirm("Delete this template? This cannot be undone.")) return;
+    deleteUserTemplate(templateId);
+    setUserTemplates(loadUserTemplates());
+    if (appliedTemplates.has(templateId)) {
+      setRules((prev) => prev.filter((r) => r.templateId !== templateId));
+      setAppliedTemplates((prev) => {
+        const next = new Set(prev);
+        next.delete(templateId);
+        return next;
+      });
+    }
+  }
+
+  function handleSaveTemplate(name: string, description: string) {
+    if (rules.length === 0) return;
+    addUserTemplate(name, rules, description);
+    setUserTemplates(loadUserTemplates());
+    setShowSaveModal(false);
+  }
+
+  function clearAllRules() {
+    if (!confirm("Clear all current rules? This will reset your scoring config.")) return;
+    setRules([]);
+    setAppliedTemplates(new Set());
+    clearCurrentRules();
+    setRestoredFromStorage(null);
+  }
+
   function updateRule(id: string, updates: Partial<ScoringRule>) {
     setRules((prev) =>
       prev.map((r) => {
@@ -120,13 +204,21 @@ export default function ScoringConfigurator({
                 matched rule adds (or subtracts) points.
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={onBack}
                 className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
               >
                 ← Back
               </button>
+              {rules.length > 0 && (
+                <button
+                  onClick={() => setShowSaveModal(true)}
+                  className="rounded-full border border-[#ff5b2e] bg-white px-4 py-2 text-sm font-medium text-[#ff5b2e] hover:bg-[#fff5f0]"
+                >
+                  💾 Save as template
+                </button>
+              )}
               <button
                 onClick={() => onConfirm(rules)}
                 disabled={rules.length === 0}
@@ -136,7 +228,112 @@ export default function ScoringConfigurator({
               </button>
             </div>
           </div>
+
+          {restoredFromStorage !== null && (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm">
+              <div className="flex items-center gap-2 text-emerald-800">
+                <span>♻️</span>
+                <span>
+                  Restored {restoredFromStorage} rule
+                  {restoredFromStorage > 1 ? "s" : ""} from your previous
+                  session.
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setRestoredFromStorage(null)}
+                  className="text-xs font-medium text-emerald-700 underline hover:text-emerald-900"
+                >
+                  Keep
+                </button>
+                <button
+                  onClick={clearAllRules}
+                  className="text-xs font-medium text-red-600 underline hover:text-red-800"
+                >
+                  Clear all
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+
+        {userTemplates.length > 0 && (
+          <div className="rounded-2xl border-2 border-dashed border-zinc-300 bg-white p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-700">
+                  💾 My templates
+                </h3>
+                <p className="mt-1 text-sm text-zinc-500">
+                  Your saved scoring presets. Click to apply.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {userTemplates.map((t) => {
+                const usable = t.rules.filter((r) =>
+                  availableFields.includes(r.field)
+                );
+                const disabled = usable.length === 0;
+                const isApplied = appliedTemplates.has(t.id);
+                return (
+                  <div
+                    key={t.id}
+                    className={`group relative rounded-xl border p-4 text-left transition-all ${
+                      isApplied
+                        ? "border-emerald-400 bg-emerald-50"
+                        : disabled
+                        ? "border-zinc-200 bg-white opacity-40"
+                        : "border-zinc-200 bg-white hover:border-zinc-400"
+                    }`}
+                  >
+                    <button
+                      onClick={() => applyUserTemplate(t.id)}
+                      disabled={disabled}
+                      className="block w-full text-left disabled:cursor-not-allowed"
+                    >
+                      {isApplied && (
+                        <div className="absolute right-12 top-3 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white">
+                          ✓
+                        </div>
+                      )}
+                      <div className="font-semibold">{t.name}</div>
+                      {t.description && (
+                        <div className="mt-1 text-xs text-zinc-500">
+                          {t.description}
+                        </div>
+                      )}
+                      <div
+                        className={`mt-2 text-[10px] font-medium ${
+                          isApplied
+                            ? "text-emerald-700"
+                            : disabled
+                            ? "text-zinc-400"
+                            : "text-zinc-500"
+                        }`}
+                      >
+                        {isApplied
+                          ? "Applied"
+                          : disabled
+                          ? "Required column not in your file"
+                          : `${t.rules.length} rule${t.rules.length > 1 ? "s" : ""}`}
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteUserTemplate(t.id)}
+                      title="Delete template"
+                      className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+                      </svg>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="rounded-2xl border-2 border-dashed border-[#ff5b2e]/30 bg-[#fff9f6] p-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -320,6 +517,93 @@ export default function ScoringConfigurator({
           </div>
         </div>
       </aside>
+
+      {showSaveModal && (
+        <SaveTemplateModal
+          rulesCount={rules.length}
+          onSave={handleSaveTemplate}
+          onCancel={() => setShowSaveModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function SaveTemplateModal({
+  rulesCount,
+  onSave,
+  onCancel,
+}: {
+  rulesCount: number;
+  onSave: (name: string, description: string) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+        <h3 className="text-lg font-bold">Save scoring template</h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          Save these {rulesCount} rule{rulesCount > 1 ? "s" : ""} to reuse on
+          future CSV uploads.
+        </p>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!name.trim()) return;
+            onSave(name, description);
+          }}
+          className="mt-6 space-y-4"
+        >
+          <div>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+              Template name *
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+              required
+              maxLength={60}
+              placeholder="e.g. SaaS sales 2026"
+              className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-bold uppercase tracking-wider text-zinc-500">
+              Description (optional)
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              maxLength={200}
+              placeholder="What's this template good for?"
+              rows={2}
+              className="mt-1 w-full resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!name.trim()}
+              className="rounded-full bg-[#ff5b2e] px-5 py-2 text-sm font-bold text-white shadow-md shadow-[#ff5b2e]/20 hover:bg-[#e84d24] disabled:opacity-40"
+            >
+              Save template
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
