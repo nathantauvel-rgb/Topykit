@@ -6,6 +6,7 @@ import Logo from "@/components/Logo";
 import CsvUploader, { ParsedCsv } from "@/components/CsvUploader";
 import CsvPreview from "@/components/CsvPreview";
 import ScoringConfigurator from "@/components/ScoringConfigurator";
+import ResultsTable from "@/components/ResultsTable";
 import { ColumnMapping } from "@/lib/csv";
 import { ScoringRule } from "@/lib/scoring";
 
@@ -91,9 +92,10 @@ export default function AppPage() {
           )}
 
           {step === "results" && rules && parsed && mapping && (
-            <ResultsPlaceholder
-              rulesCount={rules.length}
-              rowCount={parsed.totalRows}
+            <ResultsTable
+              data={parsed}
+              mapping={mapping}
+              rules={rules}
               onReset={reset}
               onBack={() => setStep("configure")}
             />
@@ -159,48 +161,3 @@ function Stepper({ step }: { step: Step }) {
   );
 }
 
-function ResultsPlaceholder({
-  rulesCount,
-  rowCount,
-  onReset,
-  onBack,
-}: {
-  rulesCount: number;
-  rowCount: number;
-  onReset: () => void;
-  onBack: () => void;
-}) {
-  return (
-    <div className="mx-auto max-w-2xl">
-      <div className="rounded-2xl border-2 border-dashed border-[#ff5b2e]/40 bg-[#fff5f0] p-10 text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#ff5b2e]/15 text-[#ff5b2e]">
-          <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-        </div>
-        <h2 className="mt-5 text-2xl font-bold tracking-tight">Scoring is configured!</h2>
-        <p className="mt-2 text-zinc-600">
-          {rulesCount} rule{rulesCount > 1 ? "s" : ""} ready to score{" "}
-          {rowCount.toLocaleString()} prospects.
-        </p>
-        <p className="mt-3 text-sm text-zinc-500">
-          The full results table + CSV export is the next piece I&apos;ll build (Session 3).
-        </p>
-        <div className="mt-6 flex justify-center gap-3">
-          <button
-            onClick={onBack}
-            className="rounded-full border-2 border-zinc-900 px-5 py-2.5 text-sm font-semibold hover:bg-zinc-900 hover:text-white"
-          >
-            ← Adjust rules
-          </button>
-          <button
-            onClick={onReset}
-            className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#ff5b2e]"
-          >
-            Try another file
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
