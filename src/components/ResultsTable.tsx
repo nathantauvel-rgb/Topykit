@@ -112,8 +112,10 @@ export default function ResultsTable({
   }
 
   function handleExport() {
-    exportScoredCsv(data.fileName, data.headers, data.rows, allScores);
+    exportScoredCsv(data.fileName, data.headers, data.rows, filteredScores);
   }
+
+  const isFiltered = filter !== "all" || search.trim().length > 0;
 
   return (
     <div className="space-y-6">
@@ -145,7 +147,7 @@ export default function ResultsTable({
               onClick={handleExport}
               className="rounded-full bg-[#ff5b2e] px-5 py-2 text-sm font-bold text-white shadow-md shadow-[#ff5b2e]/20 hover:bg-[#e84d24]"
             >
-              ↓ Export CSV
+              ↓ Export {isFiltered ? `${filteredScores.length} filtered` : "CSV"}
             </button>
           </div>
         </div>
