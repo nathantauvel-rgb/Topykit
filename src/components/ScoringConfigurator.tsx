@@ -746,6 +746,41 @@ function RuleCard({
   );
 }
 
+function TextValuesInput({
+  initialValues,
+  onCommit,
+  resetKey,
+}: {
+  initialValues: string[];
+  onCommit: (values: string[]) => void;
+  resetKey: string;
+}) {
+  const [text, setText] = useState(() => initialValues.join(", "));
+
+  useEffect(() => {
+    setText(initialValues.join(", "));
+  }, [resetKey]);
+
+  return (
+    <input
+      type="text"
+      value={text}
+      onChange={(e) => {
+        const next = e.target.value;
+        setText(next);
+        onCommit(
+          next
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        );
+      }}
+      placeholder='e.g. CEO, Founder, Head of'
+      className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
+    />
+  );
+}
+
 function ConditionRow({
   condition,
   isFirst,
@@ -763,7 +798,6 @@ function ConditionRow({
 }) {
   const operators = getValidOperators(condition.field);
   const isNumeric = isNumericField(condition.field);
-  const valuesAsString = condition.values.join(", ");
 
   return (
     <div
@@ -851,19 +885,10 @@ function ConditionRow({
             className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
           />
         ) : (
-          <input
-            type="text"
-            value={valuesAsString}
-            onChange={(e) =>
-              onChange({
-                values: e.target.value
-                  .split(",")
-                  .map((s) => s.trim())
-                  .filter(Boolean),
-              })
-            }
-            placeholder='e.g. CEO, Founder, Head of'
-            className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-[#ff5b2e]"
+          <TextValuesInput
+            initialValues={condition.values}
+            resetKey={`${condition.field}-${condition.operator}`}
+            onCommit={(values) => onChange({ values })}
           />
         )}
       </div>
