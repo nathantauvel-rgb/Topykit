@@ -1,27 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
-
-const WAITLIST_FILE = path.join(process.cwd(), "data", "waitlist.json");
-
-type Entry = {
-  email: string;
-  createdAt: string;
-};
-
-async function readEntries(): Promise<Entry[]> {
-  try {
-    const content = await fs.readFile(WAITLIST_FILE, "utf-8");
-    return JSON.parse(content) as Entry[];
-  } catch {
-    return [];
-  }
-}
-
-async function writeEntries(entries: Entry[]) {
-  await fs.mkdir(path.dirname(WAITLIST_FILE), { recursive: true });
-  await fs.writeFile(WAITLIST_FILE, JSON.stringify(entries, null, 2), "utf-8");
-}
+import { supabaseAdmin } from "@/lib/supabase";
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -39,17 +17,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const entries = await readEntries();
+    const { error } = await supabaseAdmin
+      .from("waitlist")
+      .insert({ email, source: "landing" });
 
-    if (entries.some((e) => e.email === email)) {
-      return NextResponse.json({ ok: true, alreadyRegistered: true });
+    if (error) {
+      if (error.code === "23505") {
+        return NextResponse.json({ ok: true, alreadyRegistered: true });
+      }
+      console.error("Supabase insert error:", error);
+      return NextResponse.json(
+        { error: "Could not save your email. Please try again." },
+        { status: 500 }
+      );
     }
 
-    entries.push({ email, createdAt: new Date().toISOString() });
-    await writeEntries(entries);
-
     return NextResponse.json({ ok: true });
-  } catch {
+  } catch (err) {
+    console.error("Waitlist API error:", err);
     return NextResponse.json(
       { error: "Server error. Please try again." },
       { status: 500 }
